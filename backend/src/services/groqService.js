@@ -53,9 +53,15 @@ async function processUserCommand(message, contextHistory = []) {
 
   const client = groqClient || new Groq({ apiKey: env.groqApiKey });
 
+  // FIX: contextHistory can sometimes arrive as undefined/null/non-array
+  // (e.g. malformed client payload). Guard against that before calling
+  // .map() so the whole request doesn't crash with
+  // "contextHistory.map is not a function".
+  const safeHistory = Array.isArray(contextHistory) ? contextHistory : [];
+
   const messages = [
     { role: 'system', content: buildSystemPrompt() },
-    ...contextHistory.map(item => ({
+    ...safeHistory.map(item => ({
       role: item.role === 'user' ? 'user' : 'assistant',
       content: typeof item.content === 'string' ? item.content : JSON.stringify(item.content)
     })),
