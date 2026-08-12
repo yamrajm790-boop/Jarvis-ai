@@ -105,9 +105,9 @@ class JarvisClient(
                 try {
                     val jsonObj = JSONObject(text)
                     val type = jsonObj.optString("type", "response")
-                    val tool = jsonObj.optString("tool", null)
-                    val speakMessage = jsonObj.optString("speak_message", null)
-                    val message = jsonObj.optString("message", null)
+                    val tool = if (jsonObj.has("tool") && !jsonObj.isNull("tool")) jsonObj.getString("tool") else null
+                    val speakMessage = if (jsonObj.has("speak_message") && !jsonObj.isNull("speak_message")) jsonObj.getString("speak_message") else null
+                    val message = if (jsonObj.has("message") && !jsonObj.isNull("message")) jsonObj.getString("message") else null
 
                     val argsMap = mutableMapOf<String, Any?>()
                     val argsObj = jsonObj.optJSONObject("arguments")
@@ -205,8 +205,8 @@ class JarvisClient(
                 val jsonObj = JSONObject(responseStr)
 
                 val type = jsonObj.optString("type", "response")
-                val toolName = jsonObj.optString("tool", null)
-                val speakMsg = jsonObj.optString("speak_message", null)
+                val toolName = if (jsonObj.has("tool") && !jsonObj.isNull("tool")) jsonObj.getString("tool") else null
+                val speakMsg = if (jsonObj.has("speak_message") && !jsonObj.isNull("speak_message")) jsonObj.getString("speak_message") else null
                 val responseMsg = jsonObj.optString("message", "Command processed, sir.")
 
                 if (type == "tool_call" && !toolName.isNullOrEmpty()) {
