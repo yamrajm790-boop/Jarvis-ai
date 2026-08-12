@@ -21,307 +21,695 @@ import com.example.voice.TTSManager
 import com.example.voice.WakeWordManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 
-/**
- * Runs JARVIS's real "always listening" pipeline independently of any Activity/ViewModel.
- *
- * This is what makes background listening real instead of a notification stub:
- * it owns its own SpeechRecognizer + wake-word check + TTS + command pipeline, and keeps
- * re-arming the microphone on a loop for as long as the foreground service is alive -
- * so JARVIS reacts to the wake word even when the app UI is closed.
- *
- * State machine:
- *  WAKE_WORD -> continuously restarts the recognizer. Only text containing the wake
- *               phrase is ever forwarded anywhere (privacy + battery: everything else
- *               is discarded locally and the mic is immediately re-armed).
- *  COMMAND   -> one listening pass for the actual instruction, right after the wake
- *               word was detected on its own (e.g. "Hey JARVIS" ... pause ... command).
- *  BUSY      -> a command is being processed / spoken back; mic is not active.
- *  PAUSED    -> mic released on purpose (user paused JARVIS, or the app's own mic UI
- *               is active and needs exclusive access).
- *  STOPPED   -> controller torn down.
- *
- * Note: this uses Android's on-device/cloud SpeechRecognizer in a loop, not a dedicated
- * offline wake-word engine (e.g. Porcupine), so it does consume some battery/network while
- * armed. That's a reasonable tradeoff for a from-scratch implementation with no extra SDKs.
- */
 class BackgroundAssistantController(
     private val appContext: Context,
     private val scope: CoroutineScope
 ) {
-    private enum class Mode { WAKE_WORD, COMMAND, BUSY, PAUSED, STOPPED }
 
-    private val preferences = Preferences(appContext)
-    private val repository = JarvisRepository(JarvisDatabase.getDatabase(appContext).jarvisDao())
-    private val jarvisClient = JarvisClient(appContext, repository, scope)
-    private val toolExecutor = ToolExecutor(appContext)
-    private val whatsAppTools = WhatsAppTools(appContext)
-    private val agentPlanner = AgentPlanner(appContext, jarvisClient)
-    private val agentExecutor = AgentExecutor(appContext, toolExecutor, whatsAppTools, jarvisClient)
-
-    private val speechManager = SpeechRecognizerManager(appContext)
-    private val wakeWordManager = WakeWordManager(appContext)
-    private val ttsManager = TTSManager(appContext)
-
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var mode = Mode.STOPPED
-    private var pendingRestart: Runnable? = null
-    private var consecutiveErrors = 0
-
-    private val _statusText = MutableStateFlow("Starting…")
-    val statusText: StateFlow<String> = _statusText
-
-    private var speechCollectorJob: Job? = null
-    private var agentCollectorJob: Job? = null
-
-    fun start() {
-        if (mode == Mode.WAKE_WORD || mode == Mode.COMMAND || mode == Mode.BUSY) return
-        if (speechCollectorJob == null) observeSpeechState()
-        if (agentCollectorJob == null) observeAgentState()
-        consecutiveErrors = 0
-        beginWakeWordListening()
+    private enum class Mode {
+        STOPPED,
+        WAKE_WORD,
+        COMMAND,
+        BUSY,
+        PAUSED
     }
 
-    /** Mic released on purpose - e.g. the app's own mic button is being used right now. */
+    private val preferences =
+        Preferences(appContext)
+
+    private val repository =
+        JarvisRepository(
+            JarvisDatabase
+                .getDatabase(appContext)
+                .jarvisDao()
+        )
+
+    private val jarvisClient =
+        JarvisClient(
+            appContext,
+            repository,
+            scope
+        )
+
+    private val toolExecutor =
+        ToolExecutor(appContext)
+
+    private val whatsAppTools =
+        WhatsAppTools(appContext)
+
+    private val agentPlanner =
+        AgentPlanner(
+            appContext,
+            jarvisClient
+        )
+
+    private val agentExecutor =
+        AgentExecutor(
+            appContext,
+            toolExecutor,
+            whatsAppTools,
+            jarvisClient
+        )
+
+    private val speechManager =
+        SpeechRecognizerManager(appContext)
+
+    private val wakeWordManager =
+        WakeWordManager(appContext)
+
+    private val ttsManager =
+        TTSManager(appContext)
+
+    private val handler =
+        Handler(Looper.getMainLooper())
+
+    private var mode =
+        Mode.STOPPED
+
+    private var restartRunnable: Runnable? = null
+
+    private var speechJob: Job? = null
+    private var agentJob: Job? = null
+
+    private var commandGeneration = 0L
+
+    private val _statusText =
+        MutableStateFlow("Starting JARVIS…")
+
+    val statusText: StateFlow<String> =
+        _statusText
+
+    fun start() {
+
+        if (
+            mode != Mode.STOPPED &&
+            mode != Mode.PAUSED
+        ) {
+            return
+        }
+
+        if (speechJob == null) {
+            observeSpeech()
+        }
+
+        if (agentJob == null) {
+            observeAgent()
+        }
+
+        commandGeneration++
+
+        startWakeWordLoop()
+    }
+
     fun pause() {
+
         mode = Mode.PAUSED
-        cancelPendingRestart()
+
+        cancelRestart()
+
         speechManager.cancel()
+
         ttsManager.stop()
-        _statusText.value = "Paused"
+
+        _statusText.value =
+            "JARVIS paused"
     }
 
     fun resume() {
-        if (mode != Mode.PAUSED) return
-        consecutiveErrors = 0
-        beginWakeWordListening()
+
+        if (mode != Mode.PAUSED) {
+            return
+        }
+
+        commandGeneration++
+
+        startWakeWordLoop()
     }
 
     fun destroy() {
+
         mode = Mode.STOPPED
-        cancelPendingRestart()
-        speechCollectorJob?.cancel()
-        agentCollectorJob?.cancel()
+
+        cancelRestart()
+
+        speechJob?.cancel()
+        speechJob = null
+
+        agentJob?.cancel()
+        agentJob = null
+
         speechManager.cancel()
         speechManager.destroy()
+
         ttsManager.shutdown()
     }
 
-    // ---------------------------------------------------------------------
-    // Wake-word loop
-    // ---------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // WAKE WORD
+    // ------------------------------------------------------------------
 
-    private fun beginWakeWordListening() {
+    private fun startWakeWordLoop() {
+
+        if (mode == Mode.STOPPED) {
+            return
+        }
+
         if (!preferences.isBackgroundAssistantEnabled) {
+
             mode = Mode.PAUSED
-            _statusText.value = "Background assistant disabled"
+
+            _statusText.value =
+                "Background assistant disabled"
+
             return
         }
-        if (!hasMicPermission()) {
+
+        if (!hasMicrophonePermission()) {
+
             mode = Mode.PAUSED
-            _statusText.value = "Microphone permission required"
+
+            _statusText.value =
+                "Microphone permission required"
+
             return
         }
+
         mode = Mode.WAKE_WORD
+
         wakeWordManager.setWakeWordActive(true)
-        _statusText.value = "Listening for \"${preferences.wakeWordPhrase}\""
-        try {
-            speechManager.startListening { /* handled via speechState collector below */ }
-        } catch (e: Exception) {
-            scheduleWakeWordRestart()
-        }
+
+        _statusText.value =
+            "Listening for \"${preferences.wakeWordPhrase}\""
+
+        startRecognizer()
     }
 
-    private fun beginCommandListening() {
-        if (!hasMicPermission()) {
-            beginWakeWordListening()
+    private fun startRecognizer() {
+
+        if (
+            mode == Mode.STOPPED ||
+            mode == Mode.PAUSED
+        ) {
             return
         }
-        mode = Mode.COMMAND
-        _statusText.value = "Listening for command…"
+
         try {
-            speechManager.startListening { }
-        } catch (e: Exception) {
-            scheduleWakeWordRestart()
-        }
-    }
 
-    private fun hasMicPermission(): Boolean = ContextCompat.checkSelfPermission(
-        appContext, Manifest.permission.RECORD_AUDIO
-    ) == PackageManager.PERMISSION_GRANTED
-
-    private fun scheduleWakeWordRestart(immediate: Boolean = false) {
-        if (mode == Mode.PAUSED || mode == Mode.STOPPED) return
-        cancelPendingRestart()
-        consecutiveErrors = (consecutiveErrors + 1).coerceAtMost(8)
-        val delay = if (immediate) 200L else (350L * consecutiveErrors).coerceAtMost(5000L)
-        val runnable = Runnable {
-            pendingRestart = null
-            if (mode != Mode.PAUSED && mode != Mode.STOPPED) {
-                beginWakeWordListening()
+            speechManager.startListening {
+                // Results are handled through StateFlow.
             }
+
+        } catch (_: Exception) {
+
+            scheduleRestart()
         }
-        pendingRestart = runnable
-        mainHandler.postDelayed(runnable, delay)
     }
 
-    private fun cancelPendingRestart() {
-        pendingRestart?.let { mainHandler.removeCallbacks(it) }
-        pendingRestart = null
+    private fun startCommandListening() {
+
+        if (!hasMicrophonePermission()) {
+
+            startWakeWordLoop()
+
+            return
+        }
+
+        mode = Mode.COMMAND
+
+        _statusText.value =
+            "Listening for your command…"
+
+        speechManager.cancel()
+
+        handler.postDelayed(
+            {
+                if (mode == Mode.COMMAND) {
+                    speechManager.startListening { }
+                }
+            },
+            250L
+        )
     }
 
-    // ---------------------------------------------------------------------
-    // Speech recognition events
-    // ---------------------------------------------------------------------
+    private fun hasMicrophonePermission(): Boolean {
 
-    private fun observeSpeechState() {
-        speechCollectorJob = scope.launch {
-            speechManager.speechState.collect { state ->
-                when (state) {
-                    is SpeechState.Success -> {
-                        consecutiveErrors = 0
-                        handleSpeechResult(state.text)
-                    }
-                    is SpeechState.Error -> handleSpeechError(state.message)
-                    else -> {}
+        return ContextCompat.checkSelfPermission(
+            appContext,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun scheduleRestart(
+        delayMs: Long = 500L
+    ) {
+
+        if (
+            mode == Mode.STOPPED ||
+            mode == Mode.PAUSED
+        ) {
+            return
+        }
+
+        cancelRestart()
+
+        val runnable =
+            Runnable {
+
+                restartRunnable = null
+
+                if (
+                    mode != Mode.STOPPED &&
+                    mode != Mode.PAUSED
+                ) {
+                    startWakeWordLoop()
                 }
             }
-        }
+
+        restartRunnable = runnable
+
+        handler.postDelayed(
+            runnable,
+            delayMs
+        )
     }
 
-    private fun handleSpeechResult(text: String) {
+    private fun cancelRestart() {
+
+        restartRunnable?.let {
+            handler.removeCallbacks(it)
+        }
+
+        restartRunnable = null
+    }
+
+    // ------------------------------------------------------------------
+    // SPEECH
+    // ------------------------------------------------------------------
+
+    private fun observeSpeech() {
+
+        speechJob =
+            scope.launch {
+
+                speechManager.speechState.collect { state ->
+
+                    when (state) {
+
+                        is SpeechState.Success -> {
+
+                            handleSpeech(
+                                state.text
+                            )
+                        }
+
+                        is SpeechState.Error -> {
+
+                            handleSpeechError(
+                                state.message
+                            )
+                        }
+
+                        else -> Unit
+                    }
+                }
+            }
+    }
+
+    private fun handleSpeech(
+        spokenText: String
+    ) {
+
+        val text =
+            spokenText
+                .trim()
+                .replace(
+                    Regex("\\s+"),
+                    " "
+                )
+
+        if (text.isBlank()) {
+            scheduleRestart(200L)
+            return
+        }
+
         when (mode) {
+
             Mode.WAKE_WORD -> {
-                if (wakeWordManager.isWakeWordTriggered(text)) {
-                    val command = extractCommandAfterWakeWord(text)
-                    if (command.length >= 3) {
-                        runCommand(command)
+
+                if (
+                    wakeWordManager
+                        .isWakeWordTriggered(text)
+                ) {
+
+                    val command =
+                        extractCommandAfterWakeWord(
+                            text
+                        )
+
+                    if (command.length >= 2) {
+
+                        executeCommand(
+                            command
+                        )
+
                     } else {
-                        acknowledgeAndListenForCommand()
+
+                        acknowledgeUser()
                     }
+
                 } else {
-                    scheduleWakeWordRestart(immediate = true)
+
+                    scheduleRestart(150L)
                 }
             }
-            Mode.COMMAND -> runCommand(text)
-            else -> {}
+
+            Mode.COMMAND -> {
+
+                if (text.length >= 2) {
+
+                    executeCommand(text)
+
+                } else {
+
+                    speakAndResume(
+                        "Sorry ${preferences.userName}, I didn't catch that."
+                    )
+                }
+            }
+
+            else -> Unit
         }
     }
 
-    private fun handleSpeechError(message: String) {
+    private fun handleSpeechError(
+        message: String
+    ) {
+
         when (mode) {
+
             Mode.WAKE_WORD -> {
-                if (message.contains("permission", ignoreCase = true)) {
+
+                if (
+                    message.contains(
+                        "permission",
+                        ignoreCase = true
+                    )
+                ) {
+
                     mode = Mode.PAUSED
-                    _statusText.value = message
+
+                    _statusText.value =
+                        "Microphone permission required"
+
                     return
                 }
-                // ERROR_NO_MATCH / ERROR_SPEECH_TIMEOUT / busy etc. - just keep listening.
-                scheduleWakeWordRestart()
-            }
-            Mode.COMMAND -> {
-                _statusText.value = "Didn't catch that"
-                speakThenResumeWakeWord("Sorry ${preferences.userName}, I didn't catch that.")
-            }
-            else -> {}
-        }
-    }
 
-    /** Mirrors WakeWordManager.stripWakeWord but returns "" when nothing but the wake word was said. */
-    private fun extractCommandAfterWakeWord(spokenText: String): String {
-        val trigger = preferences.wakeWordPhrase.lowercase().trim()
-        var text = spokenText.lowercase().trim()
-        text = text.replace(trigger, "")
-            .replace("hey jarvis", "")
-            .replace("hi jarvis", "")
-            .replace("jarvis", "")
-            .trim()
-        return text
-    }
+                scheduleRestart(
+                    when {
+                        message.contains(
+                            "busy",
+                            true
+                        ) -> 800L
 
-    private fun acknowledgeAndListenForCommand() {
-        mode = Mode.BUSY
-        _statusText.value = "Yes, ${preferences.userName}?"
-        mainHandler.post {
-            ttsManager.speak("Yes, ${preferences.userName}?") {
-                mainHandler.post { beginCommandListening() }
-            }
-        }
-    }
+                        message.contains(
+                            "network",
+                            true
+                        ) -> 1200L
 
-    // ---------------------------------------------------------------------
-    // Command execution
-    // ---------------------------------------------------------------------
-
-    private fun runCommand(commandText: String) {
-        mode = Mode.BUSY
-        _statusText.value = "Processing: \"$commandText\""
-        scope.launch {
-            try {
-                val plan = agentPlanner.createPlan(commandText)
-                val isAgentTask = plan.steps.size > 1 || plan.steps.any { it.tool in MULTI_STEP_TOOLS }
-                if (isAgentTask) {
-                    // Response is delivered via observeAgentState() below.
-                    agentExecutor.executePlan(plan)
-                } else {
-                    val recentHistory = repository.allConversations.firstOrNull() ?: emptyList()
-                    val (speakResponse, _) = jarvisClient.processCommand(commandText, recentHistory)
-                    speakThenResumeWakeWord(speakResponse)
-                }
-            } catch (e: Exception) {
-                speakThenResumeWakeWord("Sorry ${preferences.userName}, something went wrong: ${e.message}")
-            }
-        }
-    }
-
-    private fun observeAgentState() {
-        agentCollectorJob = scope.launch {
-            agentExecutor.agentState.collect { state ->
-                when (state) {
-                    is AgentExecutionState.AwaitingConfirmation -> {
-                        _statusText.value = "Awaiting confirmation - open app"
-                        speakThenResumeWakeWord("${state.confirmationPrompt} Please open the app to confirm.")
+                        else -> 350L
                     }
-                    is AgentExecutionState.DisambiguationRequired -> {
-                        _statusText.value = "Multiple contacts found - open app"
-                        speakThenResumeWakeWord(
-                            "Sir, I found multiple contacts named ${state.contactName}. Please open the app to choose one."
+                )
+            }
+
+            Mode.COMMAND -> {
+
+                speakAndResume(
+                    "Sorry ${preferences.userName}, I didn't catch that."
+                )
+            }
+
+            else -> Unit
+        }
+    }
+
+    private fun extractCommandAfterWakeWord(
+        spokenText: String
+    ): String {
+
+        val trigger =
+            preferences
+                .wakeWordPhrase
+                .trim()
+
+        var text =
+            spokenText.trim()
+
+        val patterns =
+            listOf(
+                trigger,
+                "hey jarvis",
+                "hi jarvis",
+                "ok jarvis",
+                "okay jarvis",
+                "jarvis"
+            )
+
+        for (pattern in patterns) {
+
+            if (pattern.isNotBlank()) {
+
+                text =
+                    text.replace(
+                        Regex(
+                            Regex.escape(pattern),
+                            RegexOption.IGNORE_CASE
+                        ),
+                        ""
+                    )
+            }
+        }
+
+        return text
+            .replace(
+                Regex("\\s+"),
+                " "
+            )
+            .trim()
+    }
+
+    // ------------------------------------------------------------------
+    // COMMAND
+    // ------------------------------------------------------------------
+
+    private fun acknowledgeUser() {
+
+        mode = Mode.BUSY
+
+        speechManager.cancel()
+
+        _statusText.value =
+            "Waiting for command…"
+
+        ttsManager.speak(
+            "Yes, ${preferences.userName}?"
+        ) {
+
+            handler.post {
+
+                if (
+                    mode != Mode.STOPPED &&
+                    mode != Mode.PAUSED
+                ) {
+                    startCommandListening()
+                }
+            }
+        }
+    }
+
+    private fun executeCommand(
+        commandText: String
+    ) {
+
+        mode = Mode.BUSY
+
+        speechManager.cancel()
+
+        val generation =
+            ++commandGeneration
+
+        _statusText.value =
+            "Processing command…"
+
+        scope.launch {
+
+            try {
+
+                val plan =
+                    agentPlanner.createPlan(
+                        commandText
+                    )
+
+                val isAgentTask =
+                    plan.steps.size > 1 ||
+                    plan.steps.any {
+                        it.tool in MULTI_STEP_TOOLS
+                    }
+
+                if (isAgentTask) {
+
+                    agentExecutor.executePlan(
+                        plan
+                    )
+
+                } else {
+
+                    val history =
+                        repository
+                            .allConversations
+                            .firstOrNull()
+                            ?: emptyList()
+
+                    val response =
+                        jarvisClient.processCommand(
+                            commandText,
+                            history
+                        )
+
+                    if (
+                        generation == commandGeneration &&
+                        mode != Mode.STOPPED &&
+                        mode != Mode.PAUSED
+                    ) {
+
+                        speakAndResume(
+                            response.first
                         )
                     }
-                    is AgentExecutionState.Success -> {
-                        repository.saveConversation("Background Agent Task", state.message)
-                        speakThenResumeWakeWord(state.message)
-                    }
-                    is AgentExecutionState.Failed -> {
-                        speakThenResumeWakeWord("Sir, ${state.reason}")
-                    }
-                    else -> {}
+                }
+
+            } catch (e: Exception) {
+
+                if (
+                    generation == commandGeneration
+                ) {
+
+                    speakAndResume(
+                        "Sorry ${preferences.userName}, I couldn't complete that command."
+                    )
                 }
             }
         }
     }
 
-    private fun speakThenResumeWakeWord(text: String) {
-        if (mode == Mode.PAUSED || mode == Mode.STOPPED) return
+    // ------------------------------------------------------------------
+    // AGENT
+    // ------------------------------------------------------------------
+
+    private fun observeAgent() {
+
+        agentJob =
+            scope.launch {
+
+                agentExecutor.agentState.collect { state ->
+
+                    when (state) {
+
+                        is AgentExecutionState.AwaitingConfirmation -> {
+
+                            speakAndResume(
+                                "${state.confirmationPrompt} Please open JARVIS to confirm."
+                            )
+                        }
+
+                        is AgentExecutionState.DisambiguationRequired -> {
+
+                            speakAndResume(
+                                "Sir, I found multiple contacts named ${state.contactName}. Please open JARVIS and choose one."
+                            )
+                        }
+
+                        is AgentExecutionState.Success -> {
+
+                            repository.saveConversation(
+                                "Background Agent",
+                                state.message
+                            )
+
+                            speakAndResume(
+                                state.message
+                            )
+                        }
+
+                        is AgentExecutionState.Failed -> {
+
+                            speakAndResume(
+                                "Sir, ${state.reason}"
+                            )
+                        }
+
+                        else -> Unit
+                    }
+                }
+            }
+    }
+
+    // ------------------------------------------------------------------
+    // TTS -> LISTEN AGAIN
+    // ------------------------------------------------------------------
+
+    private fun speakAndResume(
+        text: String
+    ) {
+
+        if (
+            mode == Mode.STOPPED ||
+            mode == Mode.PAUSED
+        ) {
+            return
+        }
+
         mode = Mode.BUSY
-        _statusText.value = "Speaking…"
-        mainHandler.post {
-            ttsManager.speak(text) {
-                mainHandler.post { scheduleWakeWordRestart(immediate = true) }
+
+        speechManager.cancel()
+
+        _statusText.value =
+            "JARVIS speaking…"
+
+        ttsManager.stop()
+
+        ttsManager.speak(text) {
+
+            handler.post {
+
+                if (
+                    mode != Mode.STOPPED &&
+                    mode != Mode.PAUSED
+                ) {
+
+                    scheduleRestart(
+                        350L
+                    )
+                }
             }
         }
     }
 
     companion object {
-        // Tools that need the multi-step AgentPlanner/AgentExecutor pipeline instead of
-        // the single-shot JarvisClient.processCommand path - mirrors JarvisViewModel.
-        private val MULTI_STEP_TOOLS = setOf(
-            "whatsapp_send_message", "generate_text", "youtube_search",
-            "maps_search", "make_call", "read_notifications"
-        )
+
+        private val MULTI_STEP_TOOLS =
+            setOf(
+                "whatsapp_send_message",
+                "generate_text",
+                "youtube_search",
+                "maps_search",
+                "make_call",
+                "read_notifications"
+            )
     }
 }
