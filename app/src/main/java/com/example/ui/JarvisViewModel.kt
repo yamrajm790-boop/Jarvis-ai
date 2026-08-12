@@ -13,6 +13,7 @@ import com.example.data.ConversationEntity
 import com.example.data.CustomCommandEntity
 import com.example.data.MemoryEntity
 import com.example.data.Preferences
+import com.example.service.JarvisForegroundService
 import com.example.tools.ToolExecutionResult
 import com.example.tools.ToolExecutor
 import com.example.tools.WhatsAppTools
@@ -76,6 +77,18 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     val backendStatus: StateFlow<BackendStatus> = jarvisClient.backendStatus
 
     init {
+        // When the app's own mic UI is active, hand the microphone over exclusively -
+        // otherwise the background wake-word loop and this screen's SpeechRecognizer
+        // fight over the mic and both fail with RECOGNIZER_BUSY. Once we're back to
+        // Idle, release it so background listening re-arms itself automatically.
+        viewModelScope.launch {
+            _assistantState.collect { state ->
+                if (state is AssistantState.Idle) {
+                    JarvisForegroundService.resumeAfterForegroundMic(getApplication())
+                }
+            }
+        }
+
         viewModelScope.launch {
             speechManager.speechState.collect { state ->
                 when (state) {
@@ -133,6 +146,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun startVoiceInput() {
         ttsManager.stop()
+        // Pause the background wake-word loop so it doesn't fight this screen for the mic.
+        JarvisForegroundService.pauseForForegroundMic(getApplication())
         speechManager.startListening { text ->
             processUserVoiceText(text)
         }
