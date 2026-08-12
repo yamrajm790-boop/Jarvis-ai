@@ -15,6 +15,21 @@ class LocalCommandParser(
     fun parseAndExecute(input: String): ToolExecutionResult? {
         val cmd = input.trim().lowercase()
 
+        // 0. Local Alarm & Timer Engine (Priority 1 Offline Short-Circuit)
+        val alarmResult = tryParseAlarm(cmd)
+        if (alarmResult != null) return alarmResult
+
+        val timerResult = tryParseTimer(cmd)
+        if (timerResult != null) return timerResult
+
+        // Flashlight
+        if (cmd.contains("flashlight on") || cmd.contains("turn on flashlight") || cmd.contains("torch on") || cmd.contains("turn on torch")) {
+            return toolExecutor.executeTool("turn_flashlight_on", emptyMap())
+        }
+        if (cmd.contains("flashlight off") || cmd.contains("turn off flashlight") || cmd.contains("torch off") || cmd.contains("turn off torch")) {
+            return toolExecutor.executeTool("turn_flashlight_off", emptyMap())
+        }
+
         // 1. Volume commands
         if (cmd.contains("volume up") || cmd == "increase volume" || cmd == "louder") {
             return toolExecutor.executeTool("increase_volume", mapOf("step" to 15))
@@ -126,6 +141,63 @@ class LocalCommandParser(
         }
 
         // Not a local command -> proceed to Groq AI
+        return null
+    }
+
+    private fun tryParseAlarm(cmd: String): ToolExecutionResult? {
+        if (!cmd.contains("alarm")) return null
+
+        val isPm = cmd.contains("pm") || cmd.contains("shaam") || cmd.contains("raat") || cmd.contains("night") || cmd.contains("evening")
+        val isAm = cmd.contains("am") || cmd.contains("subah") || cmd.contains("morning")
+
+        val timeRegex = Regex("""(\d{1,2})(?::(\d{2}))?""")
+        val matches = timeRegex.findAll(cmd)
+
+        for (match in matches) {
+            val hourStr = match.groupValues[1]
+            val minuteStr = match.groupValues[2]
+            var hour = hourStr.toIntOrNull() ?: continue
+            val minute = if (minuteStr.isNotEmpty()) minuteStr.toIntOrNull() ?: 0 else 0
+
+            if (hour > 24) continue
+
+            if (isPm && hour < 12) hour += 12
+            else if (isAm && hour == 12) hour = 0
+
+            return toolExecutor.executeTool("set_alarm", mapOf("hour" to hour, "minute" to minute, "label" to "JARVIS Alarm"))
+        }
+        return null
+    }
+
+    private fun tryParseTimer(cmd: String): ToolExecutionResult? {
+        if (!cmd.contains("timer")) return null
+
+        val minuteRegex = Regex("""(\d+)\s*(min|minute|minutes|m)""")
+        val secondRegex = Regex("""(\d+)\s*(sec|second|seconds|s)""")
+
+        val minMatch = minuteRegex.find(cmd)
+        val secMatch = secondRegex.find(cmd)
+
+        var totalSeconds = 0
+        if (minMatch != null) {
+            totalSeconds += (minMatch.groupValues[1].toIntOrNull() ?: 0) * 60
+        }
+        if (secMatch != null) {
+            totalSeconds += secMatch.groupValues[1].toIntOrNull() ?: 0
+        }
+
+        if (totalSeconds > 0) {
+            return toolExecutor.executeTool("set_timer", mapOf("seconds" to totalSeconds, "label" to "JARVIS Timer"))
+        }
+
+        val numRegex = Regex("""timer\s+(\d+)""")
+        val numMatch = numRegex.find(cmd)
+        if (numMatch != null) {
+            val mins = numMatch.groupValues[1].toIntOrNull() ?: 0
+            if (mins > 0) {
+                return toolExecutor.executeTool("set_timer", mapOf("seconds" to mins * 60, "label" to "JARVIS Timer"))
+            }
+        }
         return null
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.hardware.camera2.CameraManager
 import android.os.BatteryManager
 import android.os.Build
 import android.provider.AlarmClock
@@ -14,6 +15,8 @@ import java.util.Date
 import java.util.Locale
 
 class DeviceTools(private val context: Context) {
+
+    private val alarmScheduler = AlarmScheduler(context)
 
     fun getTime(): ToolExecutionResult {
         val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
@@ -53,19 +56,18 @@ class DeviceTools(private val context: Context) {
     }
 
     fun setAlarm(hour: Int, minute: Int, label: String? = null): ToolExecutionResult {
+        return alarmScheduler.scheduleAlarm(hour, minute, label)
+    }
+
+    fun setTorch(enable: Boolean): ToolExecutionResult {
         return try {
-            val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-                putExtra(AlarmClock.EXTRA_HOUR, hour)
-                putExtra(AlarmClock.EXTRA_MINUTES, minute)
-                putExtra(AlarmClock.EXTRA_MESSAGE, label ?: "JARVIS Alarm")
-                putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-            val timeStr = String.format(Locale.getDefault(), "%02d:%02d", hour, minute)
-            ToolExecutionResult(true, "Alarm set for $timeStr, sir.")
+            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return ToolExecutionResult(false, "No flashlight available on device.")
+            cameraManager.setTorchMode(cameraId, enable)
+            val state = if (enable) "turned on" else "turned off"
+            ToolExecutionResult(true, "Flashlight $state, sir.")
         } catch (e: Exception) {
-            ToolExecutionResult(false, "Could not set alarm: ${e.message}")
+            ToolExecutionResult(false, "Flashlight control error: ${e.message}")
         }
     }
 

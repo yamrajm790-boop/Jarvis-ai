@@ -61,6 +61,8 @@ class ToolExecutor(private val context: Context) {
                 val label = safeArgs["label"]?.toString()
                 deviceTools.setTimer(seconds, label)
             }
+            "turn_flashlight_on", "flashlight_on", "torch_on" -> deviceTools.setTorch(true)
+            "turn_flashlight_off", "flashlight_off", "torch_off" -> deviceTools.setTorch(false)
             "open_settings" -> deviceTools.openSettings()
             "open_wifi_settings" -> deviceTools.openWifiSettings()
             "open_bluetooth_settings" -> deviceTools.openBluetoothSettings()

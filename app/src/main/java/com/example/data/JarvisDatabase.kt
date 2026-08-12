@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [ConversationEntity::class, CustomCommandEntity::class, MemoryEntity::class],
-    version = 1,
+    entities = [ConversationEntity::class, CustomCommandEntity::class, MemoryEntity::class, AlarmEntity::class, TimerEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class JarvisDatabase : RoomDatabase() {
