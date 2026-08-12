@@ -4,42 +4,130 @@ import android.content.Context
 import com.example.data.Preferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.Locale
 
-/**
- * Lightweight Wake Word Manager.
- * Checks spoken phrase for the configured wake phrase (e.g. "Hey Jarvis" or "Jarvis").
- */
-class WakeWordManager(private val context: Context) {
+class WakeWordManager(
+    context: Context
+) {
 
-    private val preferences = Preferences(context)
-    private val _isWakeWordListening = MutableStateFlow(false)
-    val isWakeWordListening: StateFlow<Boolean> = _isWakeWordListening
+    private val preferences =
+        Preferences(context)
 
-    fun isWakeWordTriggered(spokenText: String): Boolean {
-        if (!preferences.isWakeWordEnabled) return false
+    private val _isWakeWordListening =
+        MutableStateFlow(false)
 
-        val trigger = preferences.wakeWordPhrase.lowercase().trim()
-        val text = spokenText.lowercase().trim()
+    val isWakeWordListening:
+            StateFlow<Boolean> =
+        _isWakeWordListening
 
-        return text.contains(trigger) ||
-                (trigger.contains("jarvis") && text.contains("jarvis")) ||
-                (trigger.contains("hey jarvis") && (text.contains("hey jarvis") || text.contains("hi jarvis")))
+    fun isWakeWordTriggered(
+        spokenText: String
+    ): Boolean {
+
+        if (!preferences.isWakeWordEnabled) {
+            return false
+        }
+
+        val text =
+            normalize(spokenText)
+
+        val configured =
+            normalize(
+                preferences.wakeWordPhrase
+            )
+
+        if (configured.isBlank()) {
+            return text.contains("jarvis")
+        }
+
+        if (text.contains(configured)) {
+            return true
+        }
+
+        // Common speech-recognition variations
+        if (
+            configured.contains("hey jarvis") &&
+            (
+                text.contains("hey jarvis") ||
+                text.contains("hi jarvis") ||
+                text.contains("okay jarvis") ||
+                text.contains("ok jarvis")
+            )
+        ) {
+            return true
+        }
+
+        if (
+            configured.contains("jarvis") &&
+            text.contains("jarvis")
+        ) {
+            return true
+        }
+
+        return false
     }
 
-    fun stripWakeWord(spokenText: String): String {
-        val trigger = preferences.wakeWordPhrase.lowercase().trim()
-        var text = spokenText.lowercase().trim()
+    fun stripWakeWord(
+        spokenText: String
+    ): String {
 
-        text = text.replace(trigger, "")
-            .replace("hey jarvis", "")
-            .replace("hi jarvis", "")
-            .replace("jarvis", "")
+        var text =
+            spokenText.trim()
+
+        val words =
+            listOf(
+                preferences.wakeWordPhrase,
+                "hey jarvis",
+                "hi jarvis",
+                "okay jarvis",
+                "ok jarvis",
+                "jarvis"
+            )
+
+        words.forEach { word ->
+
+            if (word.isNotBlank()) {
+
+                text =
+                    text.replace(
+                        Regex(
+                            Regex.escape(word),
+                            RegexOption.IGNORE_CASE
+                        ),
+                        ""
+                    )
+            }
+        }
+
+        return text
+            .replace(
+                Regex("\\s+"),
+                " "
+            )
             .trim()
-
-        return text.ifEmpty { spokenText }
     }
 
-    fun setWakeWordActive(active: Boolean) {
-        _isWakeWordListening.value = active
+    fun setWakeWordActive(
+        active: Boolean
+    ) {
+        _isWakeWordListening.value =
+            active
+    }
+
+    private fun normalize(
+        value: String
+    ): String {
+
+        return value
+            .lowercase(Locale.getDefault())
+            .replace(
+                Regex("[^a-z0-9 ]"),
+                " "
+            )
+            .replace(
+                Regex("\\s+"),
+                " "
+            )
+            .trim()
     }
 }
