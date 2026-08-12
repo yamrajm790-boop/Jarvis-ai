@@ -12,45 +12,129 @@ import com.example.tools.AlarmScheduler
 
 class BootReceiver : BroadcastReceiver() {
 
-    override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action
-        if (action == Intent.ACTION_BOOT_COMPLETED ||
-            action == Intent.ACTION_MY_PACKAGE_REPLACED ||
-            action == "android.intent.action.QUICKBOOT_POWERON"
-        ) {
-            // 1. Re-register scheduled local alarms
-            val alarmScheduler = AlarmScheduler(context.applicationContext)
-            alarmScheduler.reRegisterAlarms()
+    override fun onReceive(
+        context: Context,
+        intent: Intent
+    ) {
 
-            // 2. Restore background assistant service if enabled
-            val prefs = Preferences(context)
-            if (prefs.isAutoStartEnabled || prefs.isBackgroundAssistantEnabled) {
-                JarvisForegroundService.startService(context)
-                showBootNotification(context)
-            }
+        val action =
+            intent.action
+
+        if (
+            action != Intent.ACTION_BOOT_COMPLETED &&
+            action != Intent.ACTION_MY_PACKAGE_REPLACED &&
+            action != "android.intent.action.QUICKBOOT_POWERON"
+        ) {
+            return
+        }
+
+        val appContext =
+            context.applicationContext
+
+        // Restore alarms
+        try {
+            AlarmScheduler(
+                appContext
+            ).reRegisterAlarms()
+        } catch (_: Exception) {
+        }
+
+        val prefs =
+            Preferences(appContext)
+
+        if (
+            prefs.isAutoStartEnabled &&
+            prefs.isBackgroundAssistantEnabled
+        ) {
+
+            // Do NOT silently start the microphone service from boot.
+            // Android restricts microphone foreground services started
+            // from background/boot.
+
+            showBootNotification(
+                appContext
+            )
         }
     }
 
-    private fun showBootNotification(context: Context) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private fun showBootNotification(
+        context: Context
+    ) {
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                "jarvis_boot_channel",
-                "JARVIS System Updates",
-                NotificationManager.IMPORTANCE_LOW
+        val channelId =
+            "jarvis_boot"
+
+        val manager =
+            context.getSystemService(
+                Context.NOTIFICATION_SERVICE
+            ) as NotificationManager
+
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
+
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    channelId,
+                    "JARVIS System",
+                    NotificationManager.IMPORTANCE_LOW
+                )
             )
-            manager.createNotificationChannel(channel)
         }
 
-        val notification = NotificationCompat.Builder(context, "jarvis_boot_channel")
-            .setContentTitle("JARVIS Personal Assistant")
-            .setContentText("System restarted — Alarms & background assistant online.")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        val launchIntent =
+            context.packageManager
+                .getLaunchIntentForPackage(
+                    context.packageName
+                )
 
-        manager.notify(2001, notification)
+        val pendingIntent =
+            if (launchIntent != null) {
+
+                androidx.core.app.PendingIntentCompat
+                    .getActivity(
+                        context,
+                        900,
+                        launchIntent,
+                        0,
+                        false
+                    )
+
+            } else {
+                null
+            }
+
+        val notification =
+            NotificationCompat.Builder(
+                context,
+                channelId
+            )
+                .setSmallIcon(
+                    android.R.drawable.ic_btn_speak_now
+                )
+                .setContentTitle(
+                    "JARVIS"
+                )
+                .setContentText(
+                    "Phone restarted. Open JARVIS to resume background listening."
+                )
+                .setAutoCancel(true)
+                .setPriority(
+                    NotificationCompat.PRIORITY_LOW
+                )
+                .apply {
+                    if (pendingIntent != null) {
+                        setContentIntent(
+                            pendingIntent
+                        )
+                    }
+                }
+                .build()
+
+        manager.notify(
+            2001,
+            notification
+        )
     }
 }
