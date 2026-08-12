@@ -61,6 +61,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import com.example.ai.AgentExecutionState
 import com.example.ai.BackendStatus
 import com.example.ui.AssistantState
 import com.example.ui.JarvisViewModel
@@ -81,6 +85,7 @@ fun HomeScreen(
     onNavigateHistory: () -> Unit
 ) {
     val assistantState by viewModel.assistantState.collectAsState()
+    val agentState by viewModel.agentState.collectAsState()
     val latestResponse by viewModel.latestResponse.collectAsState()
     val lastToolExecuted by viewModel.lastToolExecuted.collectAsState()
     val backendStatus by viewModel.backendStatus.collectAsState()
@@ -258,6 +263,100 @@ fun HomeScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        // AGENT MULTI-STEP ACTION PLAN & STATUS CARD
+        when (agentState) {
+            is AgentExecutionState.ExecutingStep -> {
+                val state = agentState as AgentExecutionState.ExecutingStep
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "AGENT ACTION PLAN • STEP ${state.currentStepIndex + 1}/${state.plan.steps.size}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = JarvisCyan
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        state.completedSteps.forEach { step ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = JarvisSuccessGreen, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(step, fontSize = 12.sp, color = TextSecondary)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.SmartButton, contentDescription = null, tint = JarvisAccentGold, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Current: ${state.stepDescription}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            is AgentExecutionState.AwaitingConfirmation -> {
+                val state = agentState as AgentExecutionState.AwaitingConfirmation
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text("ACTION CONFIRMATION REQUIRED", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = JarvisAccentGold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(state.confirmationPrompt, fontSize = 13.sp, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            OutlinedButton(onClick = { viewModel.cancelAgentStep() }) {
+                                Text("Cancel", color = TextSecondary)
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Button(onClick = { viewModel.confirmAgentStep() }, colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)) {
+                                Text("Send / Proceed", color = JarvisDarkBackground, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            is AgentExecutionState.DisambiguationRequired -> {
+                val state = agentState as AgentExecutionState.DisambiguationRequired
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text("SELECT RECIPIENT", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = JarvisCyan)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Multiple contacts found for '${state.contactName}'. Tap to select:", fontSize = 12.sp, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        state.matchingContacts.forEach { (name, phone) ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { viewModel.selectDisambiguatedContact(name, phone) },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f))
+                            ) {
+                                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary, modifier = Modifier.weight(1f))
+                                    Text(phone, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = TextSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            else -> {}
+        }
 
         // Action Result Card (when lastToolExecuted exists)
         if (lastToolExecuted != null) {

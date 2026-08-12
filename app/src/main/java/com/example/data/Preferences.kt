@@ -4,16 +4,18 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.example.BuildConfig
 
+import com.example.ai.BackendConfig
+
 class Preferences(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("jarvis_user_preferences", Context.MODE_PRIVATE)
 
     var backendUrl: String
-        get() = prefs.getString("backend_url", BuildConfig.JARVIS_BACKEND_URL.ifEmpty { "https://jarvis-backend-personal.onrender.com" }) ?: "https://jarvis-backend-personal.onrender.com"
+        get() = prefs.getString("backend_url", BackendConfig.baseUrl) ?: BackendConfig.baseUrl
         set(value) = prefs.edit().putString("backend_url", value.trim()).apply()
 
     var deviceToken: String
-        get() = prefs.getString("device_token", BuildConfig.JARVIS_DEVICE_TOKEN.ifEmpty { "jarvis_secure_personal_token_12345" }) ?: "jarvis_secure_personal_token_12345"
+        get() = prefs.getString("device_token", BackendConfig.deviceToken) ?: BackendConfig.deviceToken
         set(value) = prefs.edit().putString("device_token", value.trim()).apply()
 
     var isWakeWordEnabled: Boolean

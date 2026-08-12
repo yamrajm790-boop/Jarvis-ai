@@ -61,21 +61,21 @@ class JarvisClient(
         coroutineScope.launch(Dispatchers.IO) {
             _backendStatus.value = BackendStatus.Connecting
             try {
-                val baseUrl = preferences.backendUrl.removeSuffix("/")
+                val baseUrl = BackendConfig.baseUrl.removeSuffix("/")
                 val request = Request.Builder()
                     .url("$baseUrl/health")
-                    .addHeader("X-Device-Token", preferences.deviceToken)
+                    .addHeader("X-Device-Token", BackendConfig.deviceToken)
                     .build()
 
                 client.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
                         _backendStatus.value = BackendStatus.Connected
                     } else {
-                        _backendStatus.value = BackendStatus.Error("HTTP ${response.code}: Backend unreachable")
+                        _backendStatus.value = BackendStatus.Error("Backend connection unavailable")
                     }
                 }
             } catch (e: Exception) {
-                _backendStatus.value = BackendStatus.Error("Failed to connect to backend: ${e.message}")
+                _backendStatus.value = BackendStatus.Error("Backend connection unavailable")
             }
         }
     }
@@ -84,16 +84,16 @@ class JarvisClient(
      * Connect persistent WebSocket stream
      */
     fun connectWebSocket(onMessageReceived: (ToolCallRequest) -> Unit) {
-        val baseUrl = preferences.backendUrl.removeSuffix("/")
+        val baseUrl = BackendConfig.baseUrl.removeSuffix("/")
         val wsUrl = if (baseUrl.startsWith("https://")) {
-            baseUrl.replace("https://", "wss://") + "/ws?token=${preferences.deviceToken}"
+            baseUrl.replace("https://", "wss://") + "/ws?token=${BackendConfig.deviceToken}"
         } else {
-            baseUrl.replace("http://", "ws://") + "/ws?token=${preferences.deviceToken}"
+            baseUrl.replace("http://", "ws://") + "/ws?token=${BackendConfig.deviceToken}"
         }
 
         val request = Request.Builder()
             .url(wsUrl)
-            .addHeader("X-Device-Token", preferences.deviceToken)
+            .addHeader("X-Device-Token", BackendConfig.deviceToken)
             .build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
@@ -129,7 +129,7 @@ class JarvisClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                _backendStatus.value = BackendStatus.Error("WS Error: ${t.message}")
+                _backendStatus.value = BackendStatus.Error("Backend connection unavailable")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -177,7 +177,7 @@ class JarvisClient(
 
         // 3. Forward to Render Node.js + Groq Backend via REST
         try {
-            val baseUrl = preferences.backendUrl.removeSuffix("/")
+            val baseUrl = BackendConfig.baseUrl.removeSuffix("/")
             val historyList = recentHistory.take(6).map {
                 mapOf("role" to "user", "content" to it.userMessage) to mapOf("role" to "assistant", "content" to it.assistantResponse)
             }.flatMap { listOf(it.first, it.second) }
@@ -190,13 +190,13 @@ class JarvisClient(
             val requestBody = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
             val request = Request.Builder()
                 .url("$baseUrl/api/chat")
-                .addHeader("X-Device-Token", preferences.deviceToken)
+                .addHeader("X-Device-Token", BackendConfig.deviceToken)
                 .post(requestBody)
                 .build()
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    val errMsg = "Sorry sir, AI service is temporarily unavailable."
+                    val errMsg = "Backend connection unavailable."
                     repository.saveConversation(cleanInput, errMsg)
                     return@withContext Pair(errMsg, null)
                 }
@@ -227,7 +227,7 @@ class JarvisClient(
                 }
             }
         } catch (e: Exception) {
-            val errMsg = "Connecting to Jarvis server..."
+            val errMsg = "Backend connection unavailable."
             repository.saveConversation(cleanInput, errMsg)
             return@withContext Pair(errMsg, null)
         }
@@ -249,5 +249,33 @@ class JarvisClient(
             return ToolExecutionResult(false, "Failed custom routine: ${e.message}")
         }
         return lastResult
+    }
+
+    suspend fun processTextCommandDirect(prompt: String, customSystemPrompt: String? = null): String? = withContext(Dispatchers.IO) {
+        try {
+            val baseUrl = BackendConfig.baseUrl.removeSuffix("/")
+            val jsonBody = JSONObject().apply {
+                put("message", prompt)
+                if (!customSystemPrompt.isNullOrEmpty()) {
+                    put("system_prompt", customSystemPrompt)
+                }
+            }
+
+            val requestBody = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url("$baseUrl/api/chat")
+                .addHeader("X-Device-Token", BackendConfig.deviceToken)
+                .post(requestBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val responseStr = response.body?.string() ?: "{}"
+                val jsonObj = JSONObject(responseStr)
+                jsonObj.optString("message", null)
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 }

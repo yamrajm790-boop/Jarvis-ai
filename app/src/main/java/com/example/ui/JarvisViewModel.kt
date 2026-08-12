@@ -4,6 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.JarvisApplication
+import com.example.ai.AgentExecutionState
+import com.example.ai.AgentExecutor
+import com.example.ai.AgentPlanner
 import com.example.ai.BackendStatus
 import com.example.ai.JarvisClient
 import com.example.data.ConversationEntity
@@ -11,6 +14,8 @@ import com.example.data.CustomCommandEntity
 import com.example.data.MemoryEntity
 import com.example.data.Preferences
 import com.example.tools.ToolExecutionResult
+import com.example.tools.ToolExecutor
+import com.example.tools.WhatsAppTools
 import com.example.voice.SpeechRecognizerManager
 import com.example.voice.SpeechState
 import com.example.voice.TTSManager
@@ -36,6 +41,13 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     val preferences = Preferences(application)
 
     val jarvisClient = JarvisClient(application, repository, viewModelScope)
+    val toolExecutor = ToolExecutor(application)
+    val whatsAppTools = WhatsAppTools(application)
+    val agentPlanner = AgentPlanner(application, jarvisClient)
+    val agentExecutor = AgentExecutor(application, toolExecutor, whatsAppTools, jarvisClient)
+
+    val agentState: StateFlow<AgentExecutionState> = agentExecutor.agentState
+
     val speechManager = SpeechRecognizerManager(application)
     val ttsManager = TTSManager(application)
     val wakeWordManager = WakeWordManager(application)
@@ -79,6 +91,44 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
+
+        viewModelScope.launch {
+            agentExecutor.agentState.collect { state ->
+                when (state) {
+                    is AgentExecutionState.ExecutingStep -> {
+                        _assistantState.value = AssistantState.ExecutingTool(state.stepDescription)
+                    }
+                    is AgentExecutionState.AwaitingConfirmation -> {
+                        _latestResponse.value = state.confirmationPrompt
+                        _assistantState.value = AssistantState.Speaking(state.confirmationPrompt)
+                        ttsManager.speak(state.confirmationPrompt)
+                    }
+                    is AgentExecutionState.DisambiguationRequired -> {
+                        val prompt = "Sir, ${state.contactName} ke multiple contacts hain. Kaunsa select karu?"
+                        _latestResponse.value = prompt
+                        _assistantState.value = AssistantState.Speaking(prompt)
+                        ttsManager.speak(prompt)
+                    }
+                    is AgentExecutionState.Success -> {
+                        _latestResponse.value = state.message
+                        _assistantState.value = AssistantState.Speaking(state.message)
+                        repository.saveConversation("Multi-Step Agent Task", state.message)
+                        ttsManager.speak(state.message) {
+                            _assistantState.value = AssistantState.Idle
+                        }
+                    }
+                    is AgentExecutionState.Failed -> {
+                        val reasonMsg = "Sir, ${state.reason}"
+                        _latestResponse.value = reasonMsg
+                        _assistantState.value = AssistantState.Speaking(reasonMsg)
+                        ttsManager.speak(reasonMsg) {
+                            _assistantState.value = AssistantState.Idle
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        }
     }
 
     fun startVoiceInput() {
@@ -96,21 +146,41 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             _assistantState.value = AssistantState.Thinking
 
-            val (speakResponse, toolResult) = jarvisClient.processCommand(userText, conversations.value)
+            // Create multi-step plan
+            val plan = agentPlanner.createPlan(userText)
 
-            _latestResponse.value = speakResponse
-            _lastToolExecuted.value = toolResult
-
-            if (toolResult != null) {
-                _assistantState.value = AssistantState.ExecutingTool(toolResult.resultMessage)
+            // If plan has multiple steps or special agent tools, execute via AgentExecutor
+            if (plan.steps.size > 1 || plan.steps.any { it.tool in listOf("whatsapp_send_message", "generate_text", "youtube_search", "maps_search", "make_call", "read_notifications") }) {
+                agentExecutor.executePlan(plan)
             } else {
-                _assistantState.value = AssistantState.Speaking(speakResponse)
-            }
+                // Single step command fallback
+                val (speakResponse, toolResult) = jarvisClient.processCommand(userText, conversations.value)
+                _latestResponse.value = speakResponse
+                _lastToolExecuted.value = toolResult
 
-            ttsManager.speak(speakResponse) {
-                _assistantState.value = AssistantState.Idle
+                if (toolResult != null) {
+                    _assistantState.value = AssistantState.ExecutingTool(toolResult.resultMessage)
+                } else {
+                    _assistantState.value = AssistantState.Speaking(speakResponse)
+                }
+
+                ttsManager.speak(speakResponse) {
+                    _assistantState.value = AssistantState.Idle
+                }
             }
         }
+    }
+
+    fun confirmAgentStep() {
+        agentExecutor.confirmPendingStep()
+    }
+
+    fun cancelAgentStep() {
+        agentExecutor.cancelPendingStep()
+    }
+
+    fun selectDisambiguatedContact(name: String, phone: String) {
+        agentExecutor.selectDisambiguatedContact(name, phone)
     }
 
     fun submitTextCommand(commandText: String) {

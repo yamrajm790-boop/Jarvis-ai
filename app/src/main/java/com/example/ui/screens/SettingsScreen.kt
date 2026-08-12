@@ -81,13 +81,17 @@ fun SettingsScreen(
     val prefs = viewModel.preferences
     val backendStatus by viewModel.backendStatus.collectAsState()
 
-    var backendUrl by remember { mutableStateOf(prefs.backendUrl) }
-    var deviceToken by remember { mutableStateOf(prefs.deviceToken) }
     var isWakeWordEnabled by remember { mutableStateOf(prefs.isWakeWordEnabled) }
     var wakePhrase by remember { mutableStateOf(prefs.wakeWordPhrase) }
 
     var autoExecute by remember { mutableStateOf(prefs.isAutoExecuteEnabled) }
     var confirmationMode by remember { mutableStateOf(prefs.isConfirmationModeEnabled) }
+
+    val connectionStatusText = when (backendStatus) {
+        is com.example.ai.BackendStatus.Connected -> "● Connected"
+        is com.example.ai.BackendStatus.Connecting -> "● Connecting..."
+        else -> "● Offline"
+    }
 
     val isAccessibilityActive = JarvisAccessibilityService.isServiceAvailable()
 
@@ -209,55 +213,10 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // DEVICE & BACKEND SECTION
-        SectionHeader("RENDER BACKEND & SECURITY")
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Text("Personal Device Connection", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = backendUrl,
-                    onValueChange = { backendUrl = it },
-                    label = { Text("Render Backend URL", color = TextSecondary) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = JarvisCyan)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = deviceToken,
-                    onValueChange = { deviceToken = it },
-                    label = { Text("Personal Device Token", color = TextSecondary) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = JarvisCyan)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        prefs.backendUrl = backendUrl
-                        prefs.deviceToken = deviceToken
-                        viewModel.retryBackendConnection()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)
-                ) {
-                    Text("Save Connection Settings", color = JarvisDarkBackground, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
         // ABOUT SECTION
         SectionHeader("SYSTEM STATUS")
         SettingsRowItem(icon = Icons.Outlined.Security, title = "Version", value = "v3.0 Maximum Control")
-        SettingsRowItem(icon = Icons.Outlined.Security, title = "Backend Connection", value = backendStatus.javaClass.simpleName)
+        SettingsRowItem(icon = Icons.Outlined.Security, title = "Backend Connection", value = connectionStatusText)
 
         Spacer(modifier = Modifier.height(24.dp))
 
