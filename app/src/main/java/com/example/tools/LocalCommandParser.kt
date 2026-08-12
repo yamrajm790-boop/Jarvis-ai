@@ -2,6 +2,7 @@ package com.example.tools
 
 import android.content.Context
 import com.example.accessibility.JarvisAccessibilityService
+import com.example.data.Preferences
 import com.example.service.JarvisNotificationListenerService
 
 /**
@@ -12,8 +13,46 @@ class LocalCommandParser(
     private val context: Context,
     private val toolExecutor: ToolExecutor
 ) {
+    private val prefs = Preferences(context)
+
     fun parseAndExecute(input: String): ToolExecutionResult? {
         val cmd = input.trim().lowercase()
+
+        // Privacy Mode
+        if (cmd == "privacy mode" || cmd == "privacy mode on" || cmd == "enable privacy mode") {
+            prefs.isPrivacyModeEnabled = true
+            return ToolExecutionResult(true, "Privacy mode enabled, sir. Wake word, background microphone, and cloud AI are suspended.")
+        }
+        if (cmd == "privacy mode off" || cmd == "disable privacy mode" || cmd == "turn off privacy mode") {
+            prefs.isPrivacyModeEnabled = false
+            return ToolExecutionResult(true, "Privacy mode disabled, sir. Restoring full assistant capabilities.")
+        }
+
+        if (prefs.isPrivacyModeEnabled) {
+            return ToolExecutionResult(false, "Privacy mode is active, sir. Disable privacy mode to run commands.")
+        }
+
+        // Morning Routine
+        if (cmd.contains("morning routine") || cmd.contains("morning briefing")) {
+            val time = toolExecutor.executeTool("get_time", emptyMap()).resultMessage
+            val date = toolExecutor.executeTool("get_date", emptyMap()).resultMessage
+            val battery = toolExecutor.executeTool("get_battery", emptyMap()).resultMessage
+            val notifService = JarvisNotificationListenerService.instance
+            val notifText = if (notifService != null) {
+                val notifs = notifService.getNotificationSummary()
+                if (notifs.totalCount > 0) "You have ${notifs.totalCount} active notifications." else "No unread notifications."
+            } else "Notification access disabled."
+
+            val summary = "Good morning sir! $date, $time. $battery. $notifText Have a wonderful day!"
+            return ToolExecutionResult(true, summary)
+        }
+
+        // Sleep Mode
+        if (cmd.contains("sleep mode") || cmd == "go to sleep") {
+            toolExecutor.executeTool("pause_music", emptyMap())
+            toolExecutor.executeTool("set_volume", mapOf("level" to 10))
+            return ToolExecutionResult(true, "Sleep mode activated, sir. Media paused and volume set to 10%. Good night!")
+        }
 
         // 0. Local Alarm & Timer Engine (Priority 1 Offline Short-Circuit)
         val alarmResult = tryParseAlarm(cmd)

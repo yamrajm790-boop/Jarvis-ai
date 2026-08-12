@@ -46,6 +46,10 @@ class Preferences(context: Context) {
         get() = prefs.getBoolean("confirmation_mode_enabled", true)
         set(value) = prefs.edit().putBoolean("confirmation_mode_enabled", value).apply()
 
+    var isPrivacyModeEnabled: Boolean
+        get() = prefs.getBoolean("privacy_mode_enabled", false)
+        set(value) = prefs.edit().putBoolean("privacy_mode_enabled", value).apply()
+
     var assistantName: String
         get() = prefs.getString("assistant_name", "JARVIS") ?: "JARVIS"
         set(value) = prefs.edit().putString("assistant_name", value.trim()).apply()
