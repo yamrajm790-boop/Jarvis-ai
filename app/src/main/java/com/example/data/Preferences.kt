@@ -28,6 +28,22 @@ class Preferences(context: Context) {
         get() = prefs.getBoolean("offline_mode_only", false)
         set(value) = prefs.edit().putBoolean("offline_mode_only", value).apply()
 
+    var isAutoStartEnabled: Boolean
+        get() = prefs.getBoolean("auto_start_enabled", true)
+        set(value) = prefs.edit().putBoolean("auto_start_enabled", value).apply()
+
+    var isBackgroundAssistantEnabled: Boolean
+        get() = prefs.getBoolean("background_assistant_enabled", true)
+        set(value) = prefs.edit().putBoolean("background_assistant_enabled", value).apply()
+
+    var isAutoExecuteEnabled: Boolean
+        get() = prefs.getBoolean("auto_execute_enabled", false)
+        set(value) = prefs.edit().putBoolean("auto_execute_enabled", value).apply()
+
+    var isConfirmationModeEnabled: Boolean
+        get() = prefs.getBoolean("confirmation_mode_enabled", true)
+        set(value) = prefs.edit().putBoolean("confirmation_mode_enabled", value).apply()
+
     var assistantName: String
         get() = prefs.getString("assistant_name", "JARVIS") ?: "JARVIS"
         set(value) = prefs.edit().putString("assistant_name", value.trim()).apply()

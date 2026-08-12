@@ -2,6 +2,7 @@ package com.example.tools
 
 import android.content.Context
 import com.example.accessibility.JarvisAccessibilityService
+import com.example.service.JarvisNotificationListenerService
 
 /**
  * Fast offline pattern matching engine for common device controls.
@@ -29,7 +30,10 @@ class LocalCommandParser(
             }
         }
         if (cmd == "mute" || cmd == "silence") {
-            return toolExecutor.executeTool("set_volume", mapOf("level" to 0))
+            return toolExecutor.executeTool("mute", emptyMap())
+        }
+        if (cmd == "unmute") {
+            return toolExecutor.executeTool("unmute", emptyMap())
         }
 
         // 2. Media control
@@ -46,7 +50,7 @@ class LocalCommandParser(
             return toolExecutor.executeTool("previous_track", emptyMap())
         }
 
-        // 3. Navigation / Accessibility
+        // 3. Navigation / Accessibility UI Automation
         if (cmd == "go home" || cmd == "home" || cmd == "open home") {
             val service = JarvisAccessibilityService.instance
             return service?.performGoHome() ?: toolExecutor.executeTool("go_home", emptyMap())
@@ -55,8 +59,28 @@ class LocalCommandParser(
             val service = JarvisAccessibilityService.instance
             return service?.performGoBack() ?: toolExecutor.executeTool("go_back", emptyMap())
         }
+        if (cmd.contains("recent apps") || cmd == "recents" || cmd == "open recents") {
+            return toolExecutor.executeTool("open_recent_apps", emptyMap())
+        }
+        if (cmd.contains("screenshot") || cmd == "take screenshot") {
+            return toolExecutor.executeTool("take_screenshot", emptyMap())
+        }
+        if (cmd == "scroll down" || cmd == "page down") {
+            return toolExecutor.executeTool("scroll_down", emptyMap())
+        }
+        if (cmd == "scroll up" || cmd == "page up") {
+            return toolExecutor.executeTool("scroll_up", emptyMap())
+        }
+        if (cmd.contains("read screen") || cmd.contains("what is on my screen") || cmd.contains("read visible text")) {
+            return toolExecutor.executeTool("read_visible_screen", emptyMap())
+        }
 
-        // 4. Device info / Time / Battery
+        // 4. Notifications
+        if (cmd.contains("notification") || cmd.contains("check notifications") || cmd == "read notifications") {
+            return toolExecutor.executeTool("read_notifications", emptyMap())
+        }
+
+        // 5. Device info / Time / Battery
         if (cmd.contains("time") && (cmd.contains("what") || cmd.contains("get") || cmd == "time")) {
             return toolExecutor.executeTool("get_time", emptyMap())
         }
@@ -70,7 +94,7 @@ class LocalCommandParser(
             return toolExecutor.executeTool("get_device_info", emptyMap())
         }
 
-        // 5. Settings intents
+        // 6. Settings & Camera/Gallery intents
         if (cmd == "open settings" || cmd == "settings") {
             return toolExecutor.executeTool("open_settings", emptyMap())
         }
@@ -80,8 +104,20 @@ class LocalCommandParser(
         if (cmd == "open bluetooth" || cmd == "bluetooth settings") {
             return toolExecutor.executeTool("open_bluetooth_settings", emptyMap())
         }
+        if (cmd == "open display" || cmd == "display settings") {
+            return toolExecutor.executeTool("open_display_settings", emptyMap())
+        }
+        if (cmd == "open sound" || cmd == "sound settings") {
+            return toolExecutor.executeTool("open_sound_settings", emptyMap())
+        }
+        if (cmd == "open camera" || cmd == "take photo" || cmd == "camera") {
+            return toolExecutor.executeTool("open_camera", emptyMap())
+        }
+        if (cmd == "open gallery" || cmd == "open photos" || cmd == "photos") {
+            return toolExecutor.executeTool("open_gallery", emptyMap())
+        }
 
-        // 6. Direct app launcher short circuit
+        // 7. Direct app launcher short circuit
         if (cmd.startsWith("open ") || cmd.startsWith("launch ")) {
             val appName = cmd.removePrefix("open ").removePrefix("launch ").trim()
             if (appName.isNotEmpty() && !appName.contains(" ")) {

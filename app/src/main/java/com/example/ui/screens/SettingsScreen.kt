@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.AccessibilityNew
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -32,9 +31,9 @@ import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.SpeakerNotes
 import androidx.compose.material.icons.outlined.Vibration
-import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,15 +42,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -69,8 +65,6 @@ import com.example.accessibility.JarvisAccessibilityService
 import com.example.ui.JarvisViewModel
 import com.example.ui.theme.JarvisCyan
 import com.example.ui.theme.JarvisDarkBackground
-import com.example.ui.theme.JarvisSuccessGreen
-import com.example.ui.theme.JarvisSurfaceCard
 import com.example.ui.theme.JarvisSurfaceDark
 import com.example.ui.theme.JarvisWarningRed
 import com.example.ui.theme.TextPrimary
@@ -79,7 +73,9 @@ import com.example.ui.theme.TextSecondary
 @Composable
 fun SettingsScreen(
     viewModel: JarvisViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigatePermissions: () -> Unit = {},
+    onNavigateBackgroundSetup: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val prefs = viewModel.preferences
@@ -90,8 +86,8 @@ fun SettingsScreen(
     var isWakeWordEnabled by remember { mutableStateOf(prefs.isWakeWordEnabled) }
     var wakePhrase by remember { mutableStateOf(prefs.wakeWordPhrase) }
 
-    var autoExecution by remember { mutableStateOf(true) }
-    var hapticFeedback by remember { mutableStateOf(true) }
+    var autoExecute by remember { mutableStateOf(prefs.isAutoExecuteEnabled) }
+    var confirmationMode by remember { mutableStateOf(prefs.isConfirmationModeEnabled) }
 
     val isAccessibilityActive = JarvisAccessibilityService.isServiceAvailable()
 
@@ -117,7 +113,7 @@ fun SettingsScreen(
             }
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Settings",
+                text = "Personal Assistant Settings",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
@@ -153,18 +149,33 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.width(14.dp))
                 Column {
-                    Text(text = "Jarvis Assistant", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text(text = "Personal AI Assistant", fontSize = 12.sp, color = TextSecondary)
+                    Text(text = "JARVIS Operating System", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text(text = "Personal Device Control Assistant", fontSize = 12.sp, color = TextSecondary)
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // GENERAL SECTION
-        SectionHeader("GENERAL")
-        SettingsRowItem(icon = Icons.Outlined.Palette, title = "Appearance", value = "Dark Futuristic")
-        SettingsRowItem(icon = Icons.Outlined.Language, title = "Language", value = "English")
+        // SYSTEM ACCESS & PERMISSIONS
+        SectionHeader("SYSTEM ACCESS & CONTROL")
+        SettingsRowItem(
+            icon = Icons.Outlined.Shield,
+            title = "Permissions Center",
+            value = "View & Grant All",
+            onClick = onNavigatePermissions
+        )
+        SettingsRowItem(
+            icon = Icons.Outlined.BatteryChargingFull,
+            title = "Background Operation",
+            value = "Battery Opt & Rules",
+            onClick = onNavigateBackgroundSetup
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // VOICE & WAKE WORD SECTION
+        SectionHeader("VOICE & WAKE WORD")
         SettingsRowItem(icon = Icons.Outlined.RecordVoiceOver, title = "Voice & Speech", value = "US Male 1")
         SettingsRowItem(icon = Icons.Outlined.Mic, title = "Wake Word", value = if (isWakeWordEnabled) wakePhrase else "Off", onClick = {
             isWakeWordEnabled = !isWakeWordEnabled
@@ -173,39 +184,40 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // PREFERENCES SECTION
-        SectionHeader("PREFERENCES")
-        SettingsRowItem(icon = Icons.Outlined.SpeakerNotes, title = "Responses", value = "Short")
-        SettingsToggleRow(icon = Icons.Outlined.Security, title = "Auto Execution", subtitle = "Execute commands immediately", checked = autoExecution, onCheckedChange = { autoExecution = it })
-        SettingsToggleRow(icon = Icons.Outlined.Vibration, title = "Haptic Feedback", subtitle = "Vibrate on voice commands", checked = hapticFeedback, onCheckedChange = { hapticFeedback = it })
+        // PERSONAL DEVICE MODE & EXECUTION RULES
+        SectionHeader("PERSONAL DEVICE MODE")
+        SettingsToggleRow(
+            icon = Icons.Outlined.Security,
+            title = "Auto Execute Actions",
+            subtitle = "Execute safe commands without voice confirmation",
+            checked = autoExecute,
+            onCheckedChange = {
+                autoExecute = it
+                prefs.isAutoExecuteEnabled = it
+            }
+        )
+        SettingsToggleRow(
+            icon = Icons.Outlined.Security,
+            title = "Confirmation Mode",
+            subtitle = "Require confirmation before sensitive phone calls or SMS",
+            checked = confirmationMode,
+            onCheckedChange = {
+                confirmationMode = it
+                prefs.isConfirmationModeEnabled = it
+            }
+        )
 
         Spacer(modifier = Modifier.height(20.dp))
 
         // DEVICE & BACKEND SECTION
-        SectionHeader("DEVICE & BACKEND")
-        SettingsToggleRow(
-            icon = Icons.Outlined.AccessibilityNew,
-            title = "Accessibility Service",
-            subtitle = if (isAccessibilityActive) "Active (Gestures Ready)" else "Inactive (Enable for Home/Back)",
-            checked = isAccessibilityActive,
-            onCheckedChange = {
-                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-            }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Render URL Config Card
+        SectionHeader("RENDER BACKEND & SECURITY")
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = JarvisSurfaceDark)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                Text("Backend Server Connection", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("Personal Device Connection", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = backendUrl,
@@ -215,17 +227,27 @@ fun SettingsScreen(
                     shape = RoundedCornerShape(10.dp),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = JarvisCyan)
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = deviceToken,
+                    onValueChange = { deviceToken = it },
+                    label = { Text("Personal Device Token", color = TextSecondary) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = JarvisCyan)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = {
                         prefs.backendUrl = backendUrl
+                        prefs.deviceToken = deviceToken
                         viewModel.retryBackendConnection()
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan)
                 ) {
-                    Text("Update Server", color = JarvisDarkBackground, fontWeight = FontWeight.Bold)
+                    Text("Save Connection Settings", color = JarvisDarkBackground, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -233,10 +255,9 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         // ABOUT SECTION
-        SectionHeader("ABOUT")
-        SettingsRowItem(icon = Icons.Outlined.Security, title = "Version", value = "v2.4.0 HUD")
-        SettingsRowItem(icon = Icons.Outlined.Security, title = "Backend Status", value = backendStatus.javaClass.simpleName)
-        SettingsRowItem(icon = Icons.Outlined.Security, title = "Groq Llama-3.3 Status", value = "Operational")
+        SectionHeader("SYSTEM STATUS")
+        SettingsRowItem(icon = Icons.Outlined.Security, title = "Version", value = "v3.0 Maximum Control")
+        SettingsRowItem(icon = Icons.Outlined.Security, title = "Backend Connection", value = backendStatus.javaClass.simpleName)
 
         Spacer(modifier = Modifier.height(24.dp))
 

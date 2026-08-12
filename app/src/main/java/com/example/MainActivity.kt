@@ -26,12 +26,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.service.JarvisForegroundService
 import com.example.ui.JarvisViewModel
 import com.example.ui.components.JarvisBottomNav
 import com.example.ui.components.JarvisDrawerContent
+import com.example.ui.screens.BackgroundSetupScreen
 import com.example.ui.screens.CommandsScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.PermissionsScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.JarvisDarkBackground
 import com.example.ui.theme.JarvisTheme
@@ -43,15 +46,21 @@ class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        // Permission result callback
-    }
+    ) { _ -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         checkAndRequestPermissions()
+
+        if (viewModel.preferences.isBackgroundAssistantEnabled && !JarvisForegroundService.isServiceRunning) {
+            JarvisForegroundService.startService(this)
+        }
+
+        if (intent?.getBooleanExtra("START_VOICE_NOW", false) == true) {
+            viewModel.startVoiceInput()
+        }
 
         setContent {
             JarvisTheme {
@@ -81,6 +90,7 @@ class MainActivity : ComponentActivity() {
                             onStopJarvis = {
                                 viewModel.stopVoiceInput()
                                 viewModel.ttsManager.stop()
+                                JarvisForegroundService.stopService(this@MainActivity)
                                 scope.launch { drawerState.close() }
                                 finish()
                             }
@@ -128,6 +138,19 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
 
+                                composable("permissions") {
+                                    PermissionsScreen(
+                                        onNavigateBack = { navController.popBackStack() }
+                                    )
+                                }
+
+                                composable("background-setup") {
+                                    BackgroundSetupScreen(
+                                        viewModel = viewModel,
+                                        onNavigateBack = { navController.popBackStack() }
+                                    )
+                                }
+
                                 composable("history") {
                                     HistoryScreen(
                                         viewModel = viewModel,
@@ -154,7 +177,9 @@ class MainActivity : ComponentActivity() {
                                 composable("settings") {
                                     SettingsScreen(
                                         viewModel = viewModel,
-                                        onNavigateBack = { navController.popBackStack() }
+                                        onNavigateBack = { navController.popBackStack() },
+                                        onNavigatePermissions = { navController.navigate("permissions") },
+                                        onNavigateBackgroundSetup = { navController.navigate("background-setup") }
                                     )
                                 }
                             }
@@ -174,6 +199,16 @@ class MainActivity : ComponentActivity() {
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(Manifest.permission.CALL_PHONE)
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.READ_CONTACTS)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

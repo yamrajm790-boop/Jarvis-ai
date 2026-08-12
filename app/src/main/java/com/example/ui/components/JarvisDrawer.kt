@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
@@ -29,8 +30,8 @@ import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.SmartButton
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -131,7 +132,7 @@ fun JarvisDrawerContent(
                     color = TextPrimary
                 )
                 Text(
-                    text = "Personal Assistant",
+                    text = "Personal Device Operating System",
                     fontSize = 11.sp,
                     color = TextSecondary
                 )
@@ -159,10 +160,30 @@ fun JarvisDrawerContent(
         // Navigation Items
         DrawerMenuItem(
             icon = Icons.Outlined.Home,
-            label = "Home",
+            label = "Home HUD",
             isSelected = currentRoute == "home",
             onClick = {
                 onNavigate("home")
+                onCloseDrawer()
+            }
+        )
+
+        DrawerMenuItem(
+            icon = Icons.Outlined.Shield,
+            label = "Permissions Center",
+            isSelected = currentRoute == "permissions",
+            onClick = {
+                onNavigate("permissions")
+                onCloseDrawer()
+            }
+        )
+
+        DrawerMenuItem(
+            icon = Icons.Outlined.BatteryChargingFull,
+            label = "Background Setup",
+            isSelected = currentRoute == "background-setup",
+            onClick = {
+                onNavigate("background-setup")
                 onCloseDrawer()
             }
         )
@@ -179,7 +200,7 @@ fun JarvisDrawerContent(
 
         DrawerMenuItem(
             icon = Icons.Outlined.SmartButton,
-            label = "Commands",
+            label = "Commands Hub",
             isSelected = currentRoute == "commands",
             onClick = {
                 onNavigate("commands")
@@ -189,7 +210,7 @@ fun JarvisDrawerContent(
 
         DrawerMenuItem(
             icon = Icons.Outlined.Code,
-            label = "Custom Commands",
+            label = "Custom Routines",
             isSelected = currentRoute == "commands?tab=1",
             onClick = {
                 onNavigate("commands?tab=1")
@@ -201,46 +222,6 @@ fun JarvisDrawerContent(
             icon = Icons.Outlined.Settings,
             label = "Settings",
             isSelected = currentRoute == "settings",
-            onClick = {
-                onNavigate("settings")
-                onCloseDrawer()
-            }
-        )
-
-        DrawerMenuItem(
-            icon = Icons.Outlined.Mic,
-            label = "Voice & Wake Word",
-            isSelected = false,
-            onClick = {
-                onNavigate("settings")
-                onCloseDrawer()
-            }
-        )
-
-        DrawerMenuItem(
-            icon = Icons.Outlined.Security,
-            label = "Permissions",
-            isSelected = false,
-            onClick = {
-                onNavigate("settings")
-                onCloseDrawer()
-            }
-        )
-
-        DrawerMenuItem(
-            icon = Icons.Outlined.PhoneAndroid,
-            label = "Device Info",
-            isSelected = false,
-            onClick = {
-                onNavigate("settings")
-                onCloseDrawer()
-            }
-        )
-
-        DrawerMenuItem(
-            icon = Icons.Outlined.Info,
-            label = "About Jarvis",
-            isSelected = false,
             onClick = {
                 onNavigate("settings")
                 onCloseDrawer()

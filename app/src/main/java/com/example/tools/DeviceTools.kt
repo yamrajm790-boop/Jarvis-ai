@@ -3,9 +3,11 @@ package com.example.tools
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.provider.AlarmClock
+import android.provider.MediaStore
 import android.provider.Settings
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -42,7 +44,7 @@ class DeviceTools(private val context: Context) {
 
     fun getDeviceInfo(): ToolExecutionResult {
         val model = Build.MODEL
-        val brand = Build.BRAND.capitalize(Locale.getDefault())
+        val brand = Build.BRAND.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
         val osVersion = Build.VERSION.RELEASE
         return ToolExecutionResult(
             true,
@@ -82,16 +84,39 @@ class DeviceTools(private val context: Context) {
         }
     }
 
-    fun openSettings(): ToolExecutionResult {
-        return openSettingsIntent(Settings.ACTION_SETTINGS, "Device Settings")
+    fun openSettings(): ToolExecutionResult = openSettingsIntent(Settings.ACTION_SETTINGS, "Device Settings")
+
+    fun openWifiSettings(): ToolExecutionResult = openSettingsIntent(Settings.ACTION_WIFI_SETTINGS, "Wi-Fi Settings")
+
+    fun openBluetoothSettings(): ToolExecutionResult = openSettingsIntent(Settings.ACTION_BLUETOOTH_SETTINGS, "Bluetooth Settings")
+
+    fun openDisplaySettings(): ToolExecutionResult = openSettingsIntent(Settings.ACTION_DISPLAY_SETTINGS, "Display Settings")
+
+    fun openSoundSettings(): ToolExecutionResult = openSettingsIntent(Settings.ACTION_SOUND_SETTINGS, "Sound Settings")
+
+    fun openCamera(): ToolExecutionResult {
+        return try {
+            val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ToolExecutionResult(true, "Opening camera, sir.")
+        } catch (e: Exception) {
+            ToolExecutionResult(false, "Could not launch camera app.")
+        }
     }
 
-    fun openWifiSettings(): ToolExecutionResult {
-        return openSettingsIntent(Settings.ACTION_WIFI_SETTINGS, "Wi-Fi Settings")
-    }
-
-    fun openBluetoothSettings(): ToolExecutionResult {
-        return openSettingsIntent(Settings.ACTION_BLUETOOTH_SETTINGS, "Bluetooth Settings")
+    fun openGallery(): ToolExecutionResult {
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                type = "image/*"
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            ToolExecutionResult(true, "Opening photo gallery, sir.")
+        } catch (e: Exception) {
+            ToolExecutionResult(false, "Could not launch gallery app.")
+        }
     }
 
     private fun openSettingsIntent(action: String, name: String): ToolExecutionResult {

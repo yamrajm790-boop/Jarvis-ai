@@ -178,6 +178,120 @@ const registeredTools = [
       description: "Trigger back button navigation using system accessibility action",
       parameters: { type: "object", properties: {} }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "open_recent_apps",
+      description: "Open recent apps overview using accessibility action",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "scroll_down",
+      description: "Scroll down on the active screen",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "scroll_up",
+      description: "Scroll up on the active screen",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "click_known_element",
+      description: "Click a UI element matching visible text or view ID",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Text or ID of element to click" }
+        },
+        required: ["text"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "type_text_into_supported_field",
+      description: "Type text into an active input field",
+      parameters: {
+        type: "object",
+        properties: {
+          field: { type: "string", description: "Field label or ID" },
+          text: { type: "string", description: "Text to type" }
+        },
+        required: ["field", "text"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_visible_screen",
+      description: "Extract and summarize visible text elements on screen using accessibility API",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_notifications",
+      description: "Summarize current active device notifications locally",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "open_camera",
+      description: "Open the system camera app",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "open_gallery",
+      description: "Open system photo gallery",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "make_call",
+      description: "Initiate phone call to contact or number",
+      parameters: {
+        type: "object",
+        properties: {
+          phone_number: { type: "string", description: "Phone number or contact name" }
+        },
+        required: ["phone_number"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_message",
+      description: "Draft or send an SMS message",
+      parameters: {
+        type: "object",
+        properties: {
+          phone_number: { type: "string", description: "Phone number or contact name" },
+          message: { type: "string", description: "Message body" }
+        },
+        required: ["phone_number", "message"]
+      }
+    }
   }
 ];
 
