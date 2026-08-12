@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">JARVIS</string>
+    <string name="accessibility_service_label">JARVIS Accessibility Service</string>
+    <string name="accessibility_service_description">Allows JARVIS to execute safe device interaction commands like go back, go home, and open applications on your command.</string>
+</resources>

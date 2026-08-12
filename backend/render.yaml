@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: jarvis-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DEVICE_TOKEN
+        value: jarvis_secure_personal_token_12345
+      - key: CLIENT_ORIGIN
+        value: "*"

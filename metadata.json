@@ -1,0 +1,6 @@
+{
+  "name": "JARVIS AI Voice Assistant",
+  "description": "Personal JARVIS-style AI voice assistant with Groq AI tool execution, offline parsing, and voice control.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

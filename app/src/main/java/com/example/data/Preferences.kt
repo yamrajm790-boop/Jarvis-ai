@@ -1,0 +1,46 @@
+package com.example.data
+
+import android.content.Context
+import android.content.SharedPreferences
+import com.example.BuildConfig
+
+class Preferences(context: Context) {
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences("jarvis_user_preferences", Context.MODE_PRIVATE)
+
+    var backendUrl: String
+        get() = prefs.getString("backend_url", BuildConfig.JARVIS_BACKEND_URL.ifEmpty { "https://jarvis-backend-personal.onrender.com" }) ?: "https://jarvis-backend-personal.onrender.com"
+        set(value) = prefs.edit().putString("backend_url", value.trim()).apply()
+
+    var deviceToken: String
+        get() = prefs.getString("device_token", BuildConfig.JARVIS_DEVICE_TOKEN.ifEmpty { "jarvis_secure_personal_token_12345" }) ?: "jarvis_secure_personal_token_12345"
+        set(value) = prefs.edit().putString("device_token", value.trim()).apply()
+
+    var isWakeWordEnabled: Boolean
+        get() = prefs.getBoolean("wake_word_enabled", true)
+        set(value) = prefs.edit().putBoolean("wake_word_enabled", value).apply()
+
+    var wakeWordPhrase: String
+        get() = prefs.getString("wake_word_phrase", "Hey Jarvis") ?: "Hey Jarvis"
+        set(value) = prefs.edit().putString("wake_word_phrase", value.trim()).apply()
+
+    var isOfflineModeOnly: Boolean
+        get() = prefs.getBoolean("offline_mode_only", false)
+        set(value) = prefs.edit().putBoolean("offline_mode_only", value).apply()
+
+    var assistantName: String
+        get() = prefs.getString("assistant_name", "JARVIS") ?: "JARVIS"
+        set(value) = prefs.edit().putString("assistant_name", value.trim()).apply()
+
+    var userName: String
+        get() = prefs.getString("user_name", "Sir") ?: "Sir"
+        set(value) = prefs.edit().putString("user_name", value.trim()).apply()
+
+    var ttsPitch: Float
+        get() = prefs.getFloat("tts_pitch", 0.95f)
+        set(value) = prefs.edit().putFloat("tts_pitch", value).apply()
+
+    var ttsRate: Float
+        get() = prefs.getFloat("tts_rate", 1.05f)
+        set(value) = prefs.edit().putFloat("tts_rate", value).apply()
+}
