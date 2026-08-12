@@ -15,7 +15,10 @@ sealed class SpeechState {
     object Listening : SpeechState()
     object Processing : SpeechState()
     data class Error(val message: String) : SpeechState()
-    data class Success(val text: String) : SpeechState()
+    // alternatives = all candidate transcriptions the recognizer returned, best first
+    // (text == alternatives[0]). Callers that need to be lenient about mishearing
+    // (e.g. wake-word matching) should check all of them, not just `text`.
+    data class Success(val text: String, val alternatives: List<String> = listOf(text)) : SpeechState()
 }
 
 class SpeechRecognizerManager(private val context: Context) : RecognitionListener {
@@ -44,11 +47,37 @@ class SpeechRecognizerManager(private val context: Context) : RecognitionListene
             return
         }
 
+        // Cancel any stale session before starting a fresh one - starting on top of an
+        // already-active recognizer is a common cause of it silently mishearing/dropping audio.
+        try {
+            speechRecognizer?.cancel()
+        } catch (e: Exception) {
+            // Ignored - nothing was running.
+        }
+
+        val languageTag = Locale.getDefault().toLanguageTag()
+
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            // BUG FIX: this must be a String (BCP-47 language tag), not a Locale object.
+            // Passing the raw Locale silently failed to apply, so the recognizer fell back
+            // to whatever the underlying service defaulted to instead of the device's
+            // actual language - this was the main cause of poor recognition accuracy.
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageTag)
+            // Ask for several candidate transcriptions instead of just one - lets callers
+            // (e.g. wake-word matching) check alternates when the top guess is slightly off.
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+            // Give people a realistic amount of time to speak instead of being cut off
+            // after a very short pause - this was the other big cause of "half heard" input.
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 15000L)
+            // Prefer the higher-accuracy online/cloud model over the (usually worse)
+            // offline model when a connection is available.
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
         }
 
         _speechState.value = SpeechState.Listening
@@ -123,7 +152,7 @@ class SpeechRecognizerManager(private val context: Context) : RecognitionListene
         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
         if (!matches.isNullOrEmpty()) {
             val text = matches[0]
-            _speechState.value = SpeechState.Success(text)
+            _speechState.value = SpeechState.Success(text, matches.toList())
             onResultCallback?.invoke(text)
         } else {
             _speechState.value = SpeechState.Error("No command heard")
